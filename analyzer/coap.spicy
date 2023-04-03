@@ -1,0 +1,263 @@
+module CoAP;
+
+import spicy;
+
+#    0               1               2               3
+#    0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |Ver| T |  TKL  |      Code     |          Message ID           |
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |   Token (if any, TKL bytes) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |   Options (if any) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |1 1 1 1 1 1 1 1|    Payload (if any) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+public type Message = unit {
+    ver_t_tkl: bitfield(8) {
+        version: 0..1;
+        message_type: 2..3 &convert=MessageType($$);
+        token_length: 4..7;
+    } &bit-order = spicy::BitOrder::MSB0
+      &requires=($$.version==1) &requires=($$.token_length<9);
+
+    var version: uint8;
+    on ver_t_tkl {
+        self.version = cast<uint8>($$.version);
+    }
+
+    code: uint8 &convert=Code($$);
+    
+    message_id: uint16;
+    
+    t: bytes &size=self.ver_t_tkl.token_length;
+    on t { self.token = $$.decode(); }
+    
+    var preceding_option_number: uint32 = 0;
+    options: Option(self.preceding_option_number)[] &eod;
+    on options foreach {
+	self.preceding_option_number += $$.delta;
+    }
+
+    var token: string;
+    var payload: string;
+    
+    on %done {
+        if ( self.options.back().delta == 15)
+	    self.payload = self.options.back().payload.decode();
+	self.options.pop_back();
+
+        print self;
+    }
+};
+
+#    0   1   2   3   4   5   6   7
+#   +---------------+---------------+
+#   |  Option Delta | Option Length |   1 byte
+#   +---------------+---------------+
+#   \                               \
+#   /         Option Delta          /   0-2 bytes
+#   \          (extended)           \
+#   +-------------------------------+
+#   \                               \
+#   /         Option Length         /   0-2 bytes
+#   \          (extended)           \
+#   +-------------------------------+
+#   \                               \
+#   /         Option Value          /   0 or more bytes
+#   \                               \
+#   +-------------------------------+
+
+type Option = unit(preceding_option_number: uint32) {
+    delta_length: bitfield(8) {
+	delta: 0..3;
+	length: 4..7;
+    } &bit-order = spicy::BitOrder::MSB0;
+    on delta_length {
+	self.delta = cast<uint32>($$.delta);
+	self.length = cast<uint32>($$.length);
+	self.option_ID = OptionID(self.delta + preceding_option_number);
+    }
+    
+    payload: bytes &eod if ( self.delta == 15 && self.length == 15 );
+
+    : uint8 if ( self.delta == 13 ) { self.delta += cast<uint32>($$) + 13; }
+    : uint16 if ( self.delta == 14 ) { self.delta += cast<uint32>($$) + 269; }
+    : uint8 if ( self.length == 13 ) { self.length += cast<uint32>($$) + 13; }
+    : uint16 if ( self.length == 14 ) { self.length += cast<uint32>($$) + 269; }
+
+    value_bytes: bytes &size=self.length if ( self.delta != 15 || self.length != 15);
+    on value_bytes {
+	if ( self.option_ID == OptionID::CONTENT_FORMAT )
+	    self.value = byte_to_content_type[self.value_bytes];
+	else
+	    self.value = self.value_bytes.decode();
+    }
+
+    var delta: uint32 = 0;
+    var length: uint32 = 0;
+    var option_ID: OptionID;
+    var value: string;
+};
+
+public type MessageType = enum {
+    CONFIRMABLE     = 0,
+    NONCONFIRMABLE  = 1,
+    ACKNOWLEDGEMENT = 2,
+    RESET           = 3,
+};    
+
+#    0
+#    0 1 2 3 4 5 6 7
+#   +-+-+-+-+-+-+-+-+
+#   |class|  code   |
+#   +-+-+-+-+-+-+-+-+
+
+public type Code = enum {
+    # Method Codes 0.xx
+    GET			       = 0x01,
+    POST 		       = 0x02,
+    PUT 		       = 0x03,
+    DELETE 		       = 0x04,
+    FETCH		       = 0x05,
+    PATCH 		       = 0x06,
+    IPATCH 		       = 0x07,
+
+    # Success 2.xx
+    CREATED 		       = 0x41,
+    DELETED 		       = 0x42,
+    VALID 		       = 0x43,
+    CHANGED 		       = 0x44,
+    CONTENT 		       = 0x45,
+    CONTINUE 		       = 0x5f,
+
+    # Clent Error: 4.xx
+    BAD_REQUEST 	       = 0x80,
+    UNAUTHORIZED 	       = 0x81,
+    BAD_OPTION 		       = 0x82,
+    FORBIDDEN 		       = 0x83,
+    NOT_FOUND 		       = 0x84,
+    METHOD_NOT_ALLOWED         = 0x85,
+    NOT_ACCEPTABLE             = 0x86,
+    REQUEST_ENTITY_INCOMPLETE  = 0x88,
+    CONFLICT                   = 0x89,
+    PRECONDITION_FAILED        = 0x8c,
+    REQUEST_ENTITY_TOO_LARGE   = 0x8d,
+    UNSUPPORTED_CONTENT_FORMAT = 0x8f,
+    UNPROCESSABLE_ENTITY       = 0x96,
+    TOO_MANY_REQUESTS          = 0x9d,
+
+    # Server Error: 5.xx
+    INTERNAL_SERVER_ERROR      = 0xa0,
+    NOT_IMPLEMENTED            = 0xa1,
+    BAD_GATEWAY                = 0xa2,
+    SERVICE_UNAVAILABLE        = 0xa3,
+    GATEWAY_TIMEOUT            = 0xa4,
+    PROXYING_NOT_SUPPORRTED    = 0xa5,
+    HOP_LIMIT_REACHED          = 0xa8,
+
+    # Signaling Codes 7.xx
+    CSM                        = 0xe1,
+    PING                       = 0xe2,
+    PONG                       = 0xe3,
+    RELEASE 		       = 0xe4,
+    ABORT 		       = 0xe5,
+};
+
+public type OptionID = enum {
+    IF_MATCH                          = 1,
+    URI_HOST 			      = 3,
+    ETAG 			      = 4,
+    IF_NONE_MATCH 		      = 5,
+    OBSERVE 			      = 6,	
+    URI_PORT 			      = 7,	
+    LOCATION_PATH 		      = 8,
+    OSCORE 			      = 9,
+    URI_PATH 			      = 11,
+    CONTENT_FORMAT 		      = 12,
+    MAX_AGE 			      = 14,
+    URI_QUERY 			      = 15,
+    HOP_LIMIT 			      = 16,
+    ACCEPT 			      = 17,
+    Q_BLOCK1 			      = 19,
+    LOCATION_QUERY 		      = 20,
+    EDHOC_TEMPORARY 		      = 21,
+    BLOCK2 			      = 23,
+    BLOCK1 			      = 27,
+    SIZE2 			      = 28,
+    Q_BLOCK2 			      = 31,
+    PROXY_URI 			      = 35,
+    PROXY_SCHEME 		      = 39,
+    SIZE1 			      = 60,
+    ECHO 			      = 252,
+    NO_RESPONSE 		      = 258,
+    REQUEST_TAG			      = 292,
+    OCF_ACCEPT_CONTENT_FORMAT_VERSION = 2049,
+    OCF_CONTENT_FORMAT_VERSION 	      = 2053,
+};
+
+global byte_to_content_type: map<bytes, string> = map(
+    b"\x00":   "text/plain; charset=utf-8",
+    b"\x10":   "application/cose; cose-type=cose-encrypt0",
+    b"\x11":   "application/cose; cose-type=cose-mac0",
+    b"\x12":   "application/cose; cose-type=cose-sign1",
+    b"\x13":   "application/ace+cbor",
+    b"\x15":   "image/gif",
+    b"\x16":   "image/jpeg",
+    b"\x17":   "image/png",
+    b"\x28":   "application/link-format",
+    b"\x29":   "application/xml",
+    b"\x2a":   "application/octet-stream",
+    b"\x2f":   "application/exi",
+    b"\x32":   "application/json",
+    b"\x33":   "application/json-patch+json",
+    b"\x34":   "application/merge-patch+json",
+    b"\x3c":   "application/cbor",
+    b"\x3d":   "application/cwt",
+    b"\x3e":   "application/multipart-core",
+    b"\x3f":   "application/cbor-seq",
+    b"\x60":   "application/cose; cose-type=cose-encrypt",
+    b"\x61":   "application/cose; cose-type=cose-mac",
+    b"\x62":   "application/cose; cose-type=cose-sign",
+    b"\x65":   "application/cose-key",
+    b"\x66":   "application/cose-key-set",
+    b"\x6e":   "application/senml+json",
+    b"\x6f":   "application/sensml+json",
+    b"\x70":   "application/senml+cbor",
+    b"\x71":   "application/sensml+cbor",
+    b"\x72":   "application/senml-exi",
+    b"\x73":   "application/sensml-exi",
+    b"\x8c":   "application/yang-data+cbor; id=sid",
+    b"\x0100": "application/coap-group+json",
+    b"\x0101": "application/concise-problem-details+cbor",
+    b"\x0102": "application/swid+cbor",
+    b"\x010f": "application/dots+cbor",
+    b"\x0110": "application/missing-blocks+cbor-seq",
+    b"\x0118": "application/pkcs7-mime; smime-type=server-generated-key",
+    b"\x0119": "application/pkcs7-mime; smime-type=certs-only",
+    b"\x011c": "application/pkcs8",
+    b"\x011d": "application/csrattrs",
+    b"\x011e": "application/pkcs10",
+    b"\x011f": "application/pkix-cert",
+    b"\x0122": "application/aif+cbor",
+    b"\x0123": "application/aif+json",
+    b"\x0136": "application/senml+xml",
+    b"\x0137": "application/sensml+xml",
+    b"\x0140": "application/senml-etch+json",
+    b"\x0142": "application/senml-etch+cbor",
+    b"\x0154": "application/yang-data+cbor",
+    b"\x0155": "application/yang-data+cbor; id=name",
+    b"\x01b0": "application/td+json",
+    b"\x01b1": "application/tm+json",
+    b"\x2710": "application/vnd.ocf+cbor",
+    b"\x2711": "application/oscore",
+    b"\x2712": "application/javascript",
+    b"\x2b2a": "application/json",
+    b"\x2b34": "application/cbor",
+    b"\x2d16": "application/vnd.oma.lwm2m+tlv",
+    b"\x2d17": "application/vnd.oma.lwm2m+json",
+    b"\x2d18": "application/vnd.oma.lwm2m+cbor",
+    b"\x4e20": "text/css",
+    b"\x7530": "image/svg+xml"
+);

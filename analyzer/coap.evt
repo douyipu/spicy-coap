@@ -1,0 +1,28 @@
+import CoAP;
+import Zeek_CoAP;
+
+#    0               1               2               3
+#    0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |Ver| T |  TKL  |      Code     |          Message ID           |
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |   Token (if any, TKL bytes) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |   Options (if any) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   |1 1 1 1 1 1 1 1|    Payload (if any) ...
+#   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+protocol analyzer spicy::CoAP over UDP:
+    parse with CoAP::Message,
+    port 5683/udp; 
+
+on CoAP::Message::message_id -> event CoAP::fixed_header($conn, $is_orig, self.version, self.ver_t_tkl.message_type, self.code, self.message_id);
+
+on CoAP::Message::t -> event CoAP::token($conn, self.token);
+
+on CoAP::Option::%done if ( self.delta != 15 || self.length != 15 ) -> event CoAP::option_coap($conn, self.option_ID, self.value);
+
+on CoAP::Option::%done if ( self.delta == 15 && self.length == 15 ) -> event CoAP::payload($conn, self.payload);
+
+on CoAP::Message::%done -> event CoAP::connection_state_remove($conn);

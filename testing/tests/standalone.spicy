@@ -1,0 +1,7 @@
+# @TEST-DOC: Test parsing behavior of CoAP.
+#
+# @TEST-EXEC: spicyc ${DIST}/analyzer/coap.spicy -j -d -o coap.hlto
+#
+# @TEST-EXEC: cat ${TRACES}/GET.dat | spicy-dump -p CoAP::Message coap.hlto >output 2>&1
+#
+# @TEST-EXEC: TEST_DIFF_CANONIFIER= btest-diff output
