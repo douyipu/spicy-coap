@@ -1,6 +1,6 @@
 # CoAP Protocol Analyzer with Spicy
 
-## 1. Create the project directory with `spicy-protocol-analyzer` template
+## 1. Create the project directory with `spicy-protocol-analyzer` template.
 
 ```shell
 root@zeek-ubuntu:~/# zkg create --features spicy-protocol-analyzer --packagedir spicy-coap
@@ -16,7 +16,7 @@ unit_orig: Message
 unit_resp: Message
 ```
 
-## 2. Change these files and write your code
+## 2. Change these files and write your code.
 
 ```shell
 ├── analyzer
@@ -29,7 +29,7 @@ unit_resp: Message
     └── main.zeek
 ```
 
-## Build the Spicy analyzer
+## 3. Build the Spicy analyzer.
 
 ```shell
 root@zeek-ubuntu:~/spicy-coap# rm -rf build
@@ -39,7 +39,7 @@ root@zeek-ubuntu:~/spicy-coap/build# cmake ..
 root@zeek-ubuntu:~/spicy-coap/build# cmake --build .
 ```
 
-## Test the Spicy analyzer
+## 4. Test the Spicy analyzer.
 
 1. Put your PCAP files under `spicy-coap/testing/Traces` directory.
 
@@ -51,25 +51,20 @@ root@zeek-ubuntu:~/spicy-coap/build# cmake --build .
 root@zeek-ubuntu:~/spicy-coap/testing# btest -U
 ```
 
-4. Test
+4. Test.
 
 ```shell    
 root@zeek-ubuntu:~/spicy-coap/testing# btest
 ```
 
-## Install the analyzer
+## 5. Install the analyzer and verify it.
 
 ```shell
 zkg install .
-```
-
-## Verify it
-
-```shell
 zeek -NN Zeek::Spicy
 ```
 
-## Run Zeek with CoAP analyzer
+## 6. Run Zeek with CoAP analyzer.
 
 Add `spicy-coap` if you want to generate `coap.log` file.
 
